@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Neon Platformer V3</title>
+    <style>
+        body {
+            margin: 0; padding: 0;
+            background-color: #0b0b15;
+            overflow: hidden;
+            font-family: 'Segoe UI', sans-serif;
+            touch-action: none; user-select: none;
+        }
+        canvas { display: block; }
+
+        /* --- UI GÉNÉRALE --- */
+        #ui-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+        }
+
+        /* HUD JEU (Caché au début) */
+        #game-hud { display: none; }
+
+        #score-board {
+            position: absolute; top: 20px; left: 20px;
+            color: #fff; font-size: 20px; font-weight: bold;
+            text-shadow: 0 0 10px #00ffcc;
+        }
+
+        .controls {
+            position: absolute; bottom: 20px; width: 100%; height: 140px;
+            pointer-events: auto; display: flex;
+            justify-content: space-between; padding: 0 30px; box-sizing: border-box;
+        }
+        .d-pad { display: flex; gap: 25px; }
+        .btn {
+            width: 90px; height: 90px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            display: flex; justify-content: center; align-items: center;
+            color: white; font-size: 35px;
+            backdrop-filter: blur(4px);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            transition: transform 0.1s;
+        }
+        .btn:active, .btn.pressed {
+            background: rgba(0, 255, 204, 0.3);
+            border-color: #00ffcc; transform: scale(0.9);
+        }
+
+        /* --- MENU PRINCIPAL --- */
+        #main-menu {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(11, 11, 21, 0.7); /* Fond semi-transparent */
+            backdrop-filter: blur(5px);
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+            pointer-events: auto;
+            transition: opacity 0.5s;
+        }
+
+        h1.title {
+            font-size: 60px; color: #fff;
+            text-transform: uppercase; margin: 0 0 10px 0;
+            text-shadow: 0 0 20px #00ffcc, 0 0 40px #00ffcc;
+            letter-spacing: 5px; text-align: center;
+            animation: pulse 2s infinite;
+        }
+        
+        h2.subtitle {
+            font-size: 18px; color: #aaa; margin-bottom: 50px;
+            text-transform: uppercase; letter-spacing: 2px;
+        }
+
+        .menu-btn {
+            background: linear-gradient(90deg, #00ffcc, #00b894);
+            border: none; color: #0b0b15; padding: 20px 60px;
+            border-radius: 50px; font-size: 24px; font-weight: 900;
+            cursor: pointer; text-transform: uppercase;
+            box-shadow: 0 0 20px rgba(0, 255, 204, 0.5);
+            transition: transform 0.1s, box-shadow 0.3s;
+            margin-bottom: 20px;
+        }
+        .menu-btn:active { transform: scale(0.95); }
+
+        /* MESSAGE NIVEAU (Caché au début) */
+        #msg-box {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(11, 11, 21, 0.95);
+            color: #fff; padding: 40px; border-radius: 20px;
+            text-align: center; border: 2px solid #00ffcc;
+            box-shadow: 0 0 30px rgba(0, 255, 204, 0.4);
+            display: none; pointer-events: auto; min-width: 250px;
+        }
+
+        #sound-toggle {
+            position: absolute; top: 20px; right: 20px;
+            font-size: 30px; color: white; opacity: 0.8;
+            pointer-events: auto; cursor: pointer; z-index: 100;
+        }
+
+        @keyframes pulse {
+            0% { text-shadow: 0 0 20px #00ffcc; }
+            50% { text-shadow: 0 0 40px #00ffcc, 0 0 80px #00ffcc; }
+            100% { text-shadow: 0 0 20px #00ffcc; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <!-- Bouton Son (Toujours visible) -->
+        <div id="sound-toggle">🔇</div>
+
+        <!-- MENU ACCUEIL -->
+        <div id="main-menu">
+            <h1 class="title">NEON<br>JUMP</h1>
+            <h2 class="subtitle">Édition Mobile</h2>
+            <button class="menu-btn" onclick="startFromMenu()">JOUER</button>
+            <div style="color: #666; margin-top: 20px; font-size: 14px;">Toucher pour activer le son</div>
+        </div>
+
+        <!-- HUD JEU (Score + Contrôles) -->
+        <div id="game-hud">
+            <div id="score-board">NIVEAU <span id="level-span">1</span></div>
+            
+            <!-- Message de Fin de Niveau -->
+            <div id="msg-box">
+                <h2 id="msg-title">NIVEAU TERMINÉ !</h2>
+                <p>Prêt pour la suite ?</p>
+                <button class="menu-btn" style="font-size:18px; padding:10px 30px;" onclick="nextLevelAction()">CONTINUER</button>
+            </div>
+
+            <div class="controls">
+                <div class="d-pad">
+                    <div class="btn" id="btn-left">◀</div>
+                    <div class="btn" id="btn-right">▶</div>
+                </div>
+                <div class="btn" id="btn-jump">▲</div>
+            </div>
+        </div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        // --- CONFIGURATION ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // UI ELements
+        const mainMenu = document.getElementById('main-menu');
+        const gameHud = document.getElementById('game-hud');
+        const msgBox = document.getElementById('msg-box');
+        const levelSpan = document.getElementById('level-span');
+        const soundIcon = document.getElementById('sound-toggle');
+
+        let gameState = 'MENU'; // MENU, PLAY, LEVEL_END
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // --- AUDIO ---
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        let soundEnabled = false;
+
+        // Active le son au premier clic n'importe où (politique navigateur)
+        document.body.addEventListener('click', () => {
+            if(audioCtx.state === 'suspended') audioCtx.resume();
+        }, {once:true});
+
+        soundIcon.addEventListener('click', () => {
+            soundEnabled = !soundEnabled;
+            soundIcon.innerText = soundEnabled ? "🔊" : "🔇";
+        });
+
+        function playSound(type) {
+            if (!soundEnabled) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            const now = audioCtx.currentTime;
+            
+            if (type === 'jump') {
+                osc.type = 'square'; osc.frequency.setValueAtTime(150, now); osc.frequency.exponentialRampToValueAtTime(600, now + 0.1);
+                gain.gain.setValueAtTime(0.1, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+                osc.start(now); osc.stop(now + 0.1);
+            } else if (type === 'coin') {
+                osc.type = 'sine'; osc.frequency.setValueAtTime(1200, now); osc.frequency.setValueAtTime(1800, now + 0.1);
+                gain.gain.setValueAtTime(0.1, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+                osc.start(now); osc.stop(now + 0.3);
+            } else if (type === 'win') {
+                osc.type = 'triangle'; osc.frequency.setValueAtTime(440, now); osc.frequency.setValueAtTime(880, now + 0.2);
+                gain.gain.setValueAtTime(0.1, now); gain.gain.linearRampToValueAtTime(0, now + 0.5);
+                osc.start(now); osc.stop(now + 0.5);
+            } else if (type === 'die') {
+                osc.type = 'sawtooth'; osc.frequency.setValueAtTime(200, now); osc.frequency.exponentialRampToValueAtTime(50, now + 0.3);
+                gain.gain.setValueAtTime(0.2, now); gain.gain.linearRampToValueAtTime(0, now + 0.3);
+                osc.start(now); osc.stop(now + 0.3);
+            }
+        }
+
+        // --- PHYSIQUE & CONTRÔLES ---
+        const keys = { left: false, right: false, up: false };
+        
+        window.addEventListener('keydown', e => {
+            if(gameState !== 'PLAY') return;
+            if (e.code === 'ArrowLeft') keys.left = true;
+            if (e.code === 'ArrowRight') keys.right = true;
+            if (e.code === 'ArrowUp' || e.code === 'Space') { if (!keys.up) player.tryJump(); keys.up = true; }
+        });
+        window.addEventListener('keyup', e => {
+            if (e.code === 'ArrowLeft') keys.left = false;
+            if (e.code === 'ArrowRight') keys.right = false;
+            if (e.code === 'ArrowUp' || e.code === 'Space') keys.up = false;
+        });
+
+        function setupTouchBtn(id, key) {
+            const btn = document.getElementById(id);
+            const start = (e) => { 
+                if(gameState !== 'PLAY') return;
+                e.preventDefault(); keys[key] = true; btn.classList.add('pressed'); 
+                if(key==='up') player.tryJump(); 
+            };
+            const end = (e) => { e.preventDefault(); keys[key] = false; btn.classList.remove('pressed'); };
+            ['touchstart', 'mousedown'].forEach(ev => btn.addEventListener(ev, start));
+            ['touchend', 'mouseup'].forEach(ev => btn.addEventListener(ev, end));
+        }
+        setupTouchBtn('btn-left', 'left');
+        setupTouchBtn('btn-right', 'right');
+        setupTouchBtn('btn-jump', 'up');
+
+        // --- JEU ---
+        class Player {
+            constructor() { this.w = 30; this.h = 30; this.reset(); this.color = '#00ffcc'; }
+            reset() { 
+                this.x = 50; this.y = canvas.height - 150; 
+                this.vx = 0; this.vy = 0; 
+                this.grounded = false; this.jumps = 0; this.dead = false; 
+            }
+            tryJump() {
+                if (this.dead) return;
+                if (this.grounded) {
+                    this.vy = -13; this.grounded = false; this.jumps = 1;
+                    playSound('jump');
+                    spawnParticles(this.x + this.w/2, this.y + this.h, '#fff', 5);
+                } else if (this.jumps < 2) {
+                    this.vy = -11; this.jumps++;
+                    playSound('jump');
+                    spawnParticles(this.x + this.w/2, this.y + this.h, '#00ffcc', 5);
+                }
+            }
+            update() {
+                if (this.dead) return;
+                if (keys.left) this.vx -= 1;
+                if (keys.right) this.vx += 1;
+                this.vx *= 0.85; this.vy += 0.7;
+                this.x += this.vx; this.y += this.vy;
+                this.grounded = false;
+                if (this.y > canvas.height + 50) die();
+            }
+            draw(ctx) {
+                if(this.dead) return;
+                ctx.shadowBlur = 20; ctx.shadowColor = this.color; ctx.fillStyle = this.color;
+                let scaleY = Math.abs(this.vy) > 5 ? 1.2 : (this.grounded ? 0.9 : 1);
+                ctx.fillRect(this.x, this.y, this.w, this.h * scaleY);
+                ctx.shadowBlur = 0; ctx.fillStyle = '#000';
+                let dir = this.vx > 0 ? 1 : -1;
+                ctx.fillRect(this.x + this.w/2 + (6*dir) - 2, this.y + 8, 4, 4);
+                ctx.fillRect(this.x + this.w/2 + (12*dir) - 2, this.y + 8, 4, 4);
+            }
+        }
+
+        let particles = [];
+        function spawnParticles(x, y, color, count) {
+            for(let i=0; i<count; i++) particles.push({ x, y, color, vx: (Math.random()-0.5)*10, vy: (Math.random()-0.5)*10, life: 1, size: Math.random()*4+2 });
+        }
+
+        const player = new Player();
+        let platforms = [], enemies = [];
+        let keyItem = { active: true, x: 0, y: 0 }, goal = { active: false, x: 0, y: 0 };
+        let level = 1, cameraX = 0;
+
+        function generateLevel(lvl) {
+            platforms = []; enemies = [];
+            platforms.push({x: -50, y: canvas.height - 100, w: 300, h: 100});
+            let curX = 250, curY = canvas.height - 100;
+            
+            for(let i=0; i < 8 + lvl; i++) {
+                let w = 100 + Math.random() * 100;
+                curX += 50 + Math.random() * 100;
+                curY += (Math.random() - 0.5) * 150;
+                if(curY < 150) curY = 150;
+                if(curY > canvas.height - 100) curY = canvas.height - 100;
+                platforms.push({x: curX, y: curY, w: w, h: 40});
+                if (i > 0 && i < 7 + lvl && Math.random() > 0.4) enemies.push({x: curX+20, y: curY-30, startX: curX+20, range: w-50, dir: 1, speed: 2+(lvl*0.5)});
+            }
+
+            let midPlat = platforms[Math.floor(platforms.length/2)];
+            keyItem = { x: midPlat.x + midPlat.w/2, y: midPlat.y - 60, active: true };
+            let lastPlat = platforms[platforms.length-1];
+            goal = { x: lastPlat.x + lastPlat.w - 60, y: lastPlat.y - 80, active: false };
+            
+            player.reset();
+            cameraX = 0;
+        }
+
+        function die() {
+            if(player.dead) return;
+            player.dead = true; playSound('die');
+            spawnParticles(player.x, player.y, '#ff2e63', 20);
+            setTimeout(() => player.reset(), 1000);
+        }
+
+        function checkCollisions() {
+            platforms.forEach(p => {
+                if(player.x + player.w > p.x && player.x < p.x + p.w && player.y + player.h > p.y && player.y < p.y + p.h) {
+                    if(player.vy > 0 && player.y + player.h - player.vy <= p.y + 10) {
+                        player.grounded = true; player.vy = 0; player.y = p.y - player.h; player.jumps = 0;
+                        if(player.vy > 10) spawnParticles(player.x+15, player.y+30, '#aaa', 3);
+                    }
+                }
+            });
+            enemies.forEach(e => {
+                if(Math.abs((player.x+15)-(e.x+15))<25 && Math.abs((player.y+15)-(e.y+15))<25) die();
+            });
+            if(keyItem.active) {
+                if(Math.hypot(player.x-keyItem.x, player.y-keyItem.y) < 40) {
+                    keyItem.active = false; goal.active = true; playSound('coin'); spawnParticles(keyItem.x, keyItem.y, '#ffff00', 15);
+                }
+            }
+            if(goal.active && !player.dead && Math.hypot(player.x-goal.x, player.y-goal.y) < 50) levelComplete();
+        }
+
+        function levelComplete() {
+            gameState = 'LEVEL_END';
+            playSound('win');
+            level++;
+            msgBox.style.display = 'block';
+        }
+
+        window.startFromMenu = function() {
+            if(audioCtx.state === 'suspended') audioCtx.resume();
+            mainMenu.style.display = 'none'; // Cache le menu
+            gameHud.style.display = 'block'; // Affiche les contrôles
+            gameState = 'PLAY';
+            generateLevel(1);
+        };
+
+        window.nextLevelAction = function() {
+            msgBox.style.display = 'none';
+            gameState = 'PLAY';
+            generateLevel(level);
+        };
+
+        function loop() {
+            // Fond
+            ctx.fillStyle = '#0b0b15'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Lave
+            let lavaY = canvas.height - 20 + Math.sin(Date.now()/200)*5;
+            ctx.fillStyle = '#ff4d4d'; ctx.shadowBlur = 20; ctx.shadowColor = '#ff0000';
+            ctx.fillRect(0, lavaY, canvas.width, 100); ctx.shadowBlur = 0;
+
+            // Logique Jeu (seulement si PLAY ou LEVEL_END pour afficher le fond)
+            if (gameState === 'PLAY') {
+                player.update();
+                enemies.forEach(e => {
+                    e.x += e.speed * e.dir;
+                    if (e.x > e.startX + e.range || e.x < e.startX) e.dir *= -1;
+                });
+                checkCollisions();
+                
+                // Caméra
+                let targetX = player.x - canvas.width * 0.3;
+                cameraX += (targetX - cameraX) * 0.1;
+                if(cameraX < 0) cameraX = 0;
+            } else if (gameState === 'MENU') {
+                // Animation de fond menu (caméra bouge toute seule)
+                cameraX += 2;
+            }
+
+            ctx.save();
+            ctx.translate(-cameraX, 0);
+
+            // Dessin Objets
+            ctx.fillStyle = '#1a1a2e'; ctx.strokeStyle = '#00ffcc'; ctx.lineWidth = 2;
+            platforms.forEach(p => { 
+                ctx.shadowBlur = 10; ctx.shadowColor = '#00ffcc'; 
+                ctx.fillRect(p.x, p.y, p.w, p.h); ctx.strokeRect(p.x, p.y, p.w, p.h); 
+            });
+            ctx.shadowBlur = 0;
+
+            if(keyItem.active) {
+                ctx.fillStyle = '#ffff00'; ctx.shadowBlur = 20; ctx.shadowColor = '#ffff00';
+                ctx.beginPath(); ctx.arc(keyItem.x + 15, keyItem.y + 15 + Math.sin(Date.now()/300)*10, 12, 0, Math.PI*2); ctx.fill();
+            }
+
+            ctx.fillStyle = goal.active ? '#00ffcc' : '#333'; ctx.shadowBlur = goal.active ? 30 : 0; ctx.shadowColor = '#00ffcc';
+            ctx.fillRect(goal.x, goal.y, 40, 60);
+
+            enemies.forEach(e => {
+                ctx.fillStyle = '#ff2e63'; ctx.shadowBlur = 15; ctx.shadowColor = '#ff2e63';
+                ctx.beginPath(); ctx.moveTo(e.x+15, e.y); ctx.lineTo(e.x+30, e.y+15); ctx.lineTo(e.x+15, e.y+30); ctx.lineTo(e.x, e.y+15); ctx.fill();
+            });
+
+            if(gameState !== 'MENU') player.draw(ctx); // Pas de joueur visible dans le menu
+
+            particles.forEach((p, i) => {
+                p.x += p.vx; p.y += p.vy; p.life -= 0.05;
+                ctx.globalAlpha = p.life; ctx.fillStyle = p.color;
+                ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill();
+                if(p.life <= 0) particles.splice(i, 1);
+            });
+            ctx.globalAlpha = 1;
+
+            ctx.restore();
+            requestAnimationFrame(loop);
+        }
+
+        // Initialisation : Génère un niveau "décor" pour le menu
+        generateLevel(1);
+        loop();
+
+    </script>
+</body>
+</html>
